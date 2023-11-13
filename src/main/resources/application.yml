@@ -1,1 +1,80 @@
+spring:
+  servlet:
+    multipart:
+      max-file-size: 256MB
+      max-request-size: 256MB
+  output:
+    ansi:
+      enabled: always
+  profiles:
+    active:
+  # Database
+  datasource:
+    driver-class-name: org.postgresql.Driver
+    url: jdbc:postgresql://localhost:5432/numtseng
+    username: postgres
+    password: postgres
+    hikari:
+      maximum-pool-size: 25 # JPA properties
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    database: postgresql
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    open-in-view: false
+    generate-ddl: true
+    properties:
+      enable_lazy_load_no_trans: true
+      event:
+        merge:
+          entity_copy_observer: allow
+      javax:
+        persistence:
+          sharedCache:
+            mode: ENABLE_SELECTIVE
+      hibernate:
+        show_sql: false
+        format_sql: false
+        generate_statistics: false
+  #Max size for files
+  codec:
+    max-in-memory-size: 20MB
 
+# Logger configuration
+logging:
+  pattern:
+    #console: "%d %-5level %logger : %msg%n"
+    console: "%date  %highlight(%-5level) [%12.12thread] %cyan(%-40.40logger{40}) : %msg %n"
+  level:
+    org.springframework: info
+    org.hibernate: info
+    org.springframework.aop.interceptor.PerformanceMonitorInterceptor: TRACE
+# Server configuration
+server:
+  port: 8080
+  tomcat:
+    min-spare-threads: 20
+    max-threads: 200
+    max-connections: 8192
+    accept-count: 100
+  servlet:
+    context-path: /api
+  compression:
+    enabled: true
+    mime-types: text/html,text/xml,text/plain,text/css,text/javascript,application/javascript,application/json
+    min-response-size: 2KB
+# Project configurations
+config:
+  executionTime:
+    enabled: true
+hibernate:
+  cache:
+    use_query_cache: true
+    use_second_level_cache: true
+    region:
+      factory_class: jcache
+  javax:
+    cache:
+      provider: org.ehcache.jsr107.EhcacheCachingProvider
+      uri: file:/ehcache.xml
