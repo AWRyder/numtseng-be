@@ -1,126 +1,94 @@
 package net.wyvernia.numtseng.security.filter
 
-import com.fasterxml.jackson.databind.ObjectMapper
-import io.jsonwebtoken.Jwts
-import io.jsonwebtoken.security.Keys
+import io.jsonwebtoken.*
 import jakarta.servlet.FilterChain
 import jakarta.servlet.ServletException
-import jakarta.servlet.ServletRequest
-import jakarta.servlet.ServletResponse
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
 import net.wyvernia.numtseng.config.NumtsengConfiguration
-import net.wyvernia.numtseng.exceptions.MethodNotAllowedException
-import net.wyvernia.numtseng.security.auth.AuthenticationDTO
-import net.wyvernia.numtseng.security.auth.AuthenticationService
-import net.wyvernia.numtseng.user.User
-import net.wyvernia.numtseng.user.UserService
+import net.wyvernia.numtseng.exceptions.UnauthorizedException
+import net.wyvernia.numtseng.security.auth.NumtsengAuthToken
 import org.springframework.http.HttpHeaders
 import org.springframework.security.authentication.AuthenticationManager
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken
-import org.springframework.security.core.Authentication
-import org.springframework.security.core.AuthenticationException
-import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter
+import org.springframework.security.core.context.SecurityContextHolder
+import org.springframework.security.web.authentication.www.BasicAuthenticationFilter
 import org.springframework.stereotype.Component
-import java.io.ByteArrayInputStream
+import org.springframework.util.StringUtils
 import java.io.IOException
 import java.util.*
+import javax.crypto.SecretKey
 
 @Component
 class JwtAuthenticationFilter(
-    private val authenticationManager: AuthenticationManager,
-    private val userService: UserService,
-    private val authenticationService: AuthenticationService,
     private val numtsengConfiguration: NumtsengConfiguration,
-) : UsernamePasswordAuthenticationFilter(authenticationManager) {
-
-    init {
-        setFilterProcessesUrl("/auth/login")
-    }
+    private val secretKey: SecretKey,
+    authenticationManager: AuthenticationManager
+) : BasicAuthenticationFilter(authenticationManager) {
 
     @Throws(IOException::class, ServletException::class)
-    override fun doFilter(req: ServletRequest, res: ServletResponse, chain: FilterChain) {
-        val currentRequest = req as HttpServletRequest
-        val wrappedRequest = CachingRequestWrapper(currentRequest)
-        super.doFilter(wrappedRequest, res, chain)
-    }
-
-    @Throws(AuthenticationException::class)
-    override fun attemptAuthentication(
-        request: HttpServletRequest,
-        response: HttpServletResponse
-    ): Authentication {
-        if (request.method != "POST") {
-            logger.info("Auth method not supported.")
-            throw MethodNotAllowedException(
-                "Authentication method not supported: " + request.method
-            )
-        }
-        val username = obtainUsername(request)?.trim() ?: ""
-        val password = obtainPassword(request) ?: ""
-
-
-        authenticationService.validateAuthentication(AuthenticationDTO(username, password))
-        val authRequest = UsernamePasswordAuthenticationToken(username, password)
-
-        // Allow subclasses to set the "details" property
-        setDetails(request, authRequest)
-        return authenticationManager.authenticate(authRequest)
-    }
-
-    override fun obtainPassword(request: HttpServletRequest): String? {
-        return obtainBodyParameter(request, "password")
-    }
-
-    override fun obtainUsername(request: HttpServletRequest): String? {
-        return obtainBodyParameter(request, "username")
-    }
-
-    private fun obtainBodyParameter(request: HttpServletRequest, parameterName: String): String? {
-        return try {
-            val bais = ByteArrayInputStream(request.inputStream.readAllBytes())
-            val om = ObjectMapper()
-            val reader = om.reader()
-            val newNode = reader.readTree(bais)
-            if (newNode.has(parameterName)) newNode[parameterName].asText() else null
-        } catch (e: IOException) {
-            e.printStackTrace()
-            null
-        }
-    }
-
-    @Throws(IOException::class)
-    override fun unsuccessfulAuthentication(
-        request: HttpServletRequest,
-        response: HttpServletResponse,
-        failed: AuthenticationException
-    ) {
-        response.status = HttpServletResponse.SC_FORBIDDEN
-        val mapper = ObjectMapper()
-        response.writer.write(mapper.writeValueAsString(failed.message))
-        response.writer.flush()
-    }
-
-    override fun successfulAuthentication(
+    override fun doFilterInternal(
         request: HttpServletRequest, response: HttpServletResponse,
-        filterChain: FilterChain, auth: Authentication
+        filterChain: FilterChain
     ) {
-        response.addHeader(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS, HttpHeaders.AUTHORIZATION)
-        val user = auth.principal as User
-        //Here
-        val token = Jwts.builder()
-            .subject(user.login)
-            .signWith(Keys.hmacShaKeyFor((numtsengConfiguration.jwt?.secret?:"" ).toByteArray()))
-            .issuer(numtsengConfiguration.jwt?.issuer?:"numtseng")
-            .expiration(Date(System.currentTimeMillis() + 80000))
-            .compact()
-        response.addHeader(HttpHeaders.AUTHORIZATION, "Bearer $token")
+        val header: String = request.getHeader("Authorization")
+        if (!StringUtils.startsWithIgnoreCase(header, "Bearer")) {
+            filterChain.doFilter(request, response)
+            return
+        }
         try {
-            response.writer
-                .append("Bearer ")
-                .append(token)
-        } catch (e: IOException) {
-            // No need to write as this is just a backup.
+            val authentication: NumtsengAuthToken = parseToken(request)
+            SecurityContextHolder.getContext().authentication = authentication
+            if (authentication.isExpiring) {
+                val claimsJws: Jws<Claims> = getClaimsFromToken(request.getHeader(HttpHeaders.AUTHORIZATION))
+
+                val token = Jwts.builder()
+                    .claims(claimsJws.payload)
+                    .signWith(secretKey)
+                    .issuer(numtsengConfiguration.jwt?.issuer)
+                    .subject(claimsJws.payload.subject)
+                    .expiration(Date(System.currentTimeMillis() + 100000))
+                    .compact()
+                response.addHeader(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS, HttpHeaders.AUTHORIZATION)
+                response.addHeader(HttpHeaders.AUTHORIZATION, "Bearer $token")
+            }
+            filterChain.doFilter(request, response)
+        } catch (e: UnauthorizedException) {
+            response.status = HttpServletResponse.SC_UNAUTHORIZED
+            response.writer.write("Token Expired.")
+        } catch (e: Exception) {
+            response.status = HttpServletResponse.SC_UNAUTHORIZED
         }
     }
+
+    private fun parseToken(request: HttpServletRequest): NumtsengAuthToken {
+        val claimsJws: Jws<Claims> = getClaimsFromToken(request.getHeader(HttpHeaders.AUTHORIZATION))
+
+        val username = claimsJws.payload.subject
+
+        if (!StringUtils.hasText(username)) {
+            throw MalformedJwtException("No username.")
+        }
+        val isExpiring = Date().after(Date(claimsJws.payload.expiration.time - 600))
+
+        return NumtsengAuthToken(username, isExpiring)
+    }
+
+    private fun getClaimsFromToken(token: String?): Jws<Claims> {
+        if (token != null && token.startsWith("Bearer ")) {
+            val claims = token.replace("Bearer ", "")
+            return try {
+                Jwts.parser()
+                    .verifyWith(secretKey)
+                    .build()
+                    .parseSignedClaims(claims)
+            } catch (e: ExpiredJwtException) {
+                throw UnauthorizedException("Token expired.")
+            } catch (exception: JwtException) {
+                throw exception
+            }
+        }
+        throw JwtException("Not a token")
+    }
+
+
 }

@@ -1,5 +1,6 @@
 package net.wyvernia.numtseng.security
 
+import io.jsonwebtoken.Jwts
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.security.authentication.AuthenticationManager
@@ -7,6 +8,8 @@ import org.springframework.security.authentication.dao.DaoAuthenticationProvider
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration
 import org.springframework.security.core.userdetails.UserDetailsService
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder
+import java.util.*
+import javax.crypto.SecretKey
 
 @Configuration
 class SecurityProviders(
@@ -37,5 +40,12 @@ class SecurityProviders(
     @Bean
     fun passwordEncoder(): BCryptPasswordEncoder? {
         return BCryptPasswordEncoder()
+    }
+
+    @Bean
+    fun secretKey(): SecretKey {
+        val key = Jwts.SIG.HS512.key().build()
+        println("Current Secret Key: " + Base64.getEncoder().encodeToString(key.encoded))
+        return key
     }
 }

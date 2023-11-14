@@ -1,6 +1,7 @@
 package net.wyvernia.numtseng.security
 
 import net.wyvernia.numtseng.security.filter.JwtAuthenticationFilter
+import net.wyvernia.numtseng.security.filter.JwtLoginFilter
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.http.HttpMethod
@@ -12,6 +13,7 @@ import org.springframework.web.cors.CorsConfigurationSource
 
 @Configuration
 class SecurityConfiguration(
+    private val jwtLoginFilter: JwtLoginFilter,
     private val jwtAuthenticationFilter: JwtAuthenticationFilter,
 ) {
 
@@ -20,6 +22,7 @@ class SecurityConfiguration(
     fun filterChain(http: HttpSecurity): SecurityFilterChain {
         http.csrf { csrf -> csrf.disable() }
             .cors { cors -> cors.disable() }
+            .addFilter(jwtLoginFilter)
             .addFilter(jwtAuthenticationFilter)
             .authorizeHttpRequests { request ->
                 request
