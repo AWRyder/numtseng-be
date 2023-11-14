@@ -4,7 +4,7 @@ import java.io.Serializable
 import java.util.*
 
 abstract class AbstractCrudService<R : AbstractRepository<T, ID>?, T:Any, ID : Serializable>(
-    private var repository: R,
+    var repository: R,
 ) {
     val all: Set<T>
         get() = HashSet(repository!!.findAll())

@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.RequestMapping
 class LessonController (
     private val lessonService: LessonService
 ){
-    @RequestMapping("/")
+    @RequestMapping("")
     fun getLessons() : ResponseEntity<Set<Lesson>>{
 
         return ResponseEntity.ok(lessonService.all)
