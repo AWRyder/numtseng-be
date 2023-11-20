@@ -30,7 +30,7 @@ class JwtAuthenticationFilter(
         request: HttpServletRequest, response: HttpServletResponse,
         filterChain: FilterChain
     ) {
-        val header: String = request.getHeader("Authorization")
+        val header: String? = request.getHeader("Authorization")
         if (!StringUtils.startsWithIgnoreCase(header, "Bearer")) {
             filterChain.doFilter(request, response)
             return

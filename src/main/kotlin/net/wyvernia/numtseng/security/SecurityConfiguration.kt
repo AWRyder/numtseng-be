@@ -21,7 +21,7 @@ class SecurityConfiguration(
     @Throws(Exception::class)
     fun filterChain(http: HttpSecurity): SecurityFilterChain {
         http.csrf { csrf -> csrf.disable() }
-            .cors { cors -> cors.disable() }
+            .cors { cors -> cors.configurationSource(corsConfigurationSource()) }
             .addFilter(jwtLoginFilter)
             .addFilter(jwtAuthenticationFilter)
             .authorizeHttpRequests { request ->
